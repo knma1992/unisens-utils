@@ -312,6 +312,8 @@ class AudioClassifierDataReader:
             self.result["rel_timestamp_millis"].append(rel_timestamp_list[0] + rel_delta / 2)
 
         mean_df = pd.DataFrame(self.result)
+        mean_df["rel_timestamp_millis"] = mean_df["rel_timestamp_millis"].astype(int)
+
         mean_df.to_csv(
             self.data_path / Path("mean_result.csv"),
             index=False,
