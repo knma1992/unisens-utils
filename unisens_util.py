@@ -1,5 +1,8 @@
 import logging
+import os
 import re
+import shutil
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -193,6 +196,10 @@ def find_sample_rate_resolution(data_path: Path) -> float:
     return float(sample_rates[0])
 
 
+def create_column_name(pre_name: str, length: int):
+    return [f"{pre_name}_{i}" for i in range(1, length + 1)]
+
+
 class AudioClassifierDataReader:
     def __init__(
         self, data_path: Path, float_format: str = "%.4f", reorganize: bool = True, sep: str = ";", decimal: str = ","
@@ -211,9 +218,6 @@ class AudioClassifierDataReader:
     def add_start_time(self, rel_timestamp, start_datetime):
         return start_datetime + timedelta(seconds=rel_timestamp / self.sample_rate_resolution)
 
-    def create_column_name(self, pre_name: str, length: int):
-        return [f"{pre_name}_{i}" for i in range(1, length + 1)]
-
     def get_classes_scores(self, values: np.ndarray):
         top_indices = np.argpartition(values, -self.num)[-self.num :]
         sorted_indices = top_indices[np.argsort(values[top_indices])[::-1]]
@@ -230,12 +234,12 @@ class AudioClassifierDataReader:
 
         class_df = pd.read_csv(self.data_path / "audio_classifier_class.csv", header=None)
         num_classes = class_df.shape[1] - 1
-        self.class_columns = self.create_column_name("class", num_classes)
+        self.class_columns = create_column_name("class", num_classes)
         class_df.columns = ["rel_timestamp"] + self.class_columns
 
         scores_df = pd.read_csv(self.data_path / "audio_classifier_scores.csv", header=None)
         num_scores = scores_df.shape[1] - 1
-        self.score_columns = self.create_column_name("score", num_scores)
+        self.score_columns = create_column_name("score", num_scores)
         scores_df.columns = ["rel_timestamp"] + self.score_columns
 
         self.num = min(num_scores, num_classes)
@@ -270,7 +274,6 @@ class AudioClassifierDataReader:
         return merged_df
 
     def compute_mean(self, accepted_time_delta: timedelta) -> pd.DataFrame:
-
         np_timedelta = np.timedelta64(accepted_time_delta)
 
         abs_timestamps = self.merged_df["abs_timestamp"].to_numpy()
@@ -287,16 +290,15 @@ class AudioClassifierDataReader:
         num_rows = self.merged_df.shape[0]
 
         with alive_bar(num_rows, force_tty=True) as bar:
-            for index in range(num_rows-1):
-
+            for index in range(num_rows - 1):
                 counter += 1
 
                 for i, ind in enumerate(class_values[index]):
                     # print(i, ind)
                     class_scores[ind] += score_values[index][i]
 
-                abs_next_start_time = abs_timestamps[index+1]
-                rel_next_start_time = rel_timestamps[index+1]
+                abs_next_start_time = abs_timestamps[index + 1]
+                rel_next_start_time = rel_timestamps[index + 1]
 
                 abs_delta = abs_next_start_time - abs_start_time
                 rel_delta = rel_next_start_time - rel_start_time
@@ -305,8 +307,8 @@ class AudioClassifierDataReader:
                     class_scores /= counter
                     self.get_classes_scores(class_scores)
 
-                    self.result["abs_timestamp"].append(abs_start_time) #  + abs_delta / 2
-                    self.result["rel_timestamp_millis"].append(int(rel_start_time)) #  + rel_delta / 2
+                    self.result["abs_timestamp"].append(abs_start_time)  #  + abs_delta / 2
+                    self.result["rel_timestamp_millis"].append(int(rel_start_time))  #  + rel_delta / 2
 
                     # Reset values
                     abs_start_time = abs_next_start_time
@@ -320,8 +322,8 @@ class AudioClassifierDataReader:
         if counter != 0:
             class_scores /= counter
             self.get_classes_scores(class_scores)
-            self.result["abs_timestamp"].append(abs_start_time) #  + abs_delta / 2
-            self.result["rel_timestamp_millis"].append(int(rel_start_time)) #  + rel_delta / 2
+            self.result["abs_timestamp"].append(abs_start_time)  #  + abs_delta / 2
+            self.result["rel_timestamp_millis"].append(int(rel_start_time))  #  + rel_delta / 2
 
         mean_df = pd.DataFrame(self.result)
         mean_df["rel_timestamp_millis"] = mean_df["rel_timestamp_millis"].astype(int)
@@ -335,3 +337,62 @@ class AudioClassifierDataReader:
         )
 
         return mean_df
+
+
+def create_huge_dataset_for_testing(data_path: Path, N: int = 2):
+    class_df = pd.read_csv(data_path / "audio_classifier_class.csv", header=None)
+    num_classes = class_df.shape[1] - 1
+    class_columns = create_column_name("class", num_classes)
+    class_df.columns = ["rel_timestamp"] + class_columns
+
+    scores_df = pd.read_csv(data_path / "audio_classifier_scores.csv", header=None)
+    num_scores = scores_df.shape[1] - 1
+    score_columns = create_column_name("score", num_scores)
+    scores_df.columns = ["rel_timestamp"] + score_columns
+
+    float_format = "%.4f"
+
+    sum_class_df = class_df.copy()
+    sum_score_df = scores_df.copy()
+
+    with alive_bar(N, force_tty=True) as bar:
+        for i in range(N):
+            sum_class_df = pd.concat([sum_class_df, sum_class_df.copy()])
+            sum_score_df = pd.concat([sum_score_df, sum_score_df.copy()])
+
+            bar()
+
+    new_path = data_path.parent / Path("long_test_study")
+
+    try:
+        os.makedirs(new_path, exist_ok=True)
+    except ():
+        print("folder already exists")
+
+    print(f"created new folder: {new_path}")
+    shutil.copyfile(data_path / Path("unisens.xml"), new_path / Path("unisens.xml"))
+    print("copied xml from source")
+
+    num_samples = sum_score_df.shape[0]
+    sum_class_df["rel_timestamp"] = np.arange(num_samples) * 200
+    sum_score_df["rel_timestamp"] = np.arange(num_samples) * 200
+
+    study_time_hours = sum_class_df.iloc[-1]["rel_timestamp"].item() / (100 * 3600)
+
+    print(f"fake study_time_hours: {timedelta(hours=study_time_hours)}")
+
+    sum_class_df.to_csv(
+        new_path / Path("audio_classifier_class.csv"), header=False, index=False, float_format=float_format
+    )
+    sum_score_df.to_csv(
+        new_path / Path("audio_classifier_scores.csv"), header=False, index=False, float_format=float_format
+    )
+
+    t1 = time.perf_counter()
+    reader = AudioClassifierDataReader(new_path)
+    _ = reader.compute_mean(timedelta(minutes=1))
+    elapsed_time = round(time.perf_counter() - t1, 3)
+
+    print(
+        f"For a fake study with {num_samples} samples it took {elapsed_time} seconds to complete averaging the results."
+    )
