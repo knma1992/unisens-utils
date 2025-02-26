@@ -259,6 +259,18 @@ class AudioClassifierDataReader:
 
             merged_df = merged_df[new_column_order]
 
+        else:
+            new_column_order = ["abs_timestamp", "rel_timestamp_millis"]
+
+            for i in range(1, self.num + 1):
+                new_column_order += [f"class_{i}"]
+            
+            for i in range(1, self.num + 1):
+                new_column_order += [f"score_{i}"]
+
+            merged_df = merged_df[new_column_order]
+
+
         merged_df.to_csv(
             self.data_path / Path("result.csv"),
             index=False,
