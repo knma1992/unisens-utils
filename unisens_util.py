@@ -20,12 +20,12 @@ logger.setLevel(logging.WARNING)
 NUM_YAMNET_CLASSES = 521
 
 
-def import_values_entry(value_name: str, file_path: str, np_value_datatype: np.dtype) -> tuple[np.array, np.array]:
+def import_values_entry(value_name: str, file_path: Path, np_value_datatype: np.dtype) -> tuple[np.array, np.array]:
     """imports unisens value entries
 
     Parameters
     ----------
-    file_path : str
+    file_path : Path
         The path to the directory where the unisens files are in.
     value_name : str
         The name of the value entry (name of the file, without the .bin), should be the same as described in the unisens
@@ -44,12 +44,12 @@ def import_values_entry(value_name: str, file_path: str, np_value_datatype: np.d
 
     # unisens logs a warning and I dont know why: "WARNING:root:id "None" does not end in .csv"
 
-    u = unisens.Unisens(file_path)
+    u = unisens.Unisens(str(file_path))
     num_channels = len(u[value_name + ".bin"].channel)
 
     record_dtype = np.dtype([("timeStamps", np.int64), ("values", np_value_datatype, num_channels)])
 
-    data = np.fromfile(file_path + "/" + value_name + ".bin", dtype=record_dtype)
+    data = np.fromfile(file_path / Path(value_name + ".bin"), dtype=record_dtype)
 
     value_result = data["values"]
     long_data = data["timeStamps"]
@@ -57,12 +57,12 @@ def import_values_entry(value_name: str, file_path: str, np_value_datatype: np.d
     return value_result, long_data
 
 
-def import_signal_entry(value_name: str, file_path: str, np_value_datatype: np.dtype) -> np.array:
+def import_signal_entry(value_name: str, file_path: Path, np_value_datatype: np.dtype) -> np.array:
     """imports unisens signal entries
 
     Parameters
     ----------
-    file_path : str
+    file_path : Path
         The path to the directory where the unisens files are in
     value_name : str
         The name of the value entry (name of the file, without the .bin), should be the same as described in the unisens
@@ -76,15 +76,15 @@ def import_signal_entry(value_name: str, file_path: str, np_value_datatype: np.d
         The values in a numpy array.
     """
 
-    return np.fromfile(file_path + "/" + value_name + ".bin", dtype=np_value_datatype)
+    return np.fromfile(file_path / Path(value_name + ".bin"), dtype=np_value_datatype)
 
 
-def extract_timestamp_from_values_entry(value_name: str, file_path: str, np_value_datatype: np.dtype) -> np.array:
+def extract_timestamp_from_values_entry(value_name: str, file_path: Path, np_value_datatype: np.dtype) -> np.array:
     """imports only the timeStanps from the unisens value entries
 
     Parameters
     ----------
-    file_path : str
+    file_path : Path
         The path to the directory where the unisens files are in
     value_name : str
         The name of the value entry (name of the file, without the .bin), should be the same as described in the unisens
@@ -98,21 +98,21 @@ def extract_timestamp_from_values_entry(value_name: str, file_path: str, np_valu
         The timeStamps in an numpy array.
     """
 
-    u = unisens.Unisens(file_path)
+    u = unisens.Unisens(str(file_path))
     num_channels = len(u[value_name + ".bin"].channel)
 
     record_dtype = np.dtype([("timeStamps", np.int64), ("values", np_value_datatype, num_channels)])
 
-    data = np.fromfile(file_path + "/" + value_name + ".bin", dtype=record_dtype)
+    data = np.fromfile(file_path / Path(value_name + ".bin"), dtype=record_dtype)
 
     return data["timeStamps"]
 
 
 def csv_from_values_entry(
     value_name: str,
-    file_path: str,
+    file_path: Path,
     np_value_datatype: np.dtype,
-    float_format: str = None,
+    float_format: str = "%.4f",
     zoneInfo: str = "Europe/Berlin",
     abs_time: bool = True,
 ) -> pd.DataFrame:
@@ -121,7 +121,7 @@ def csv_from_values_entry(
 
     Parameters
     ----------
-    file_path : str
+    file_path : Path
         The path to the directory where the unisens files are in
     value_name : str
         The name of the value entry (name of the file, without the .bin), should be the same as described in the unisens
@@ -139,7 +139,7 @@ def csv_from_values_entry(
         The pandas dataframe with the timestamps and corresponding unisens data.
     """
 
-    u = unisens.Unisens(file_path)
+    u = unisens.Unisens(str(file_path))
     value_result, timestamp_result = import_values_entry(value_name, file_path, np_value_datatype)
 
     df = pd.DataFrame(
@@ -164,7 +164,7 @@ def csv_from_values_entry(
     else:
         df.insert(0, "timeStamp", timestamp_result)
 
-    df.to_csv(file_path + "/" + value_name + ".csv", index=False, sep=";", float_format=float_format)
+    df.to_csv(file_path / Path(value_name + ".csv"), index=False, sep=";", float_format=float_format)
 
     return df
 
@@ -264,12 +264,11 @@ class AudioClassifierDataReader:
 
             for i in range(1, self.num + 1):
                 new_column_order += [f"class_{i}"]
-            
+
             for i in range(1, self.num + 1):
                 new_column_order += [f"score_{i}"]
 
             merged_df = merged_df[new_column_order]
-
 
         merged_df.to_csv(
             self.data_path / Path("result.csv"),
@@ -354,11 +353,11 @@ class AudioClassifierDataReader:
 
 def create_huge_dataset_for_testing(data_path: Path, N: int = 2):
     """
-    TLDR: Do not use this function! 
-    
-    It will copy an existing audio classifier study and duplicate it N times. 
-    Then it will save it in to a new folder and copy the unisens.xml in to it. After that it will run the 
-    combine/averaging on it to see how it behaves for large data.  
+    TLDR: Do not use this function!
+
+    It will copy an existing audio classifier study and duplicate it N times.
+    Then it will save it in to a new folder and copy the unisens.xml in to it. After that it will run the
+    combine/averaging on it to see how it behaves for large data.
 
     Parameters
     ----------
