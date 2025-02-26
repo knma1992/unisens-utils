@@ -270,35 +270,47 @@ class AudioClassifierDataReader:
         return merged_df
 
     def compute_mean(self, accepted_time_delta: timedelta) -> pd.DataFrame:
+
+        np_timedelta = np.timedelta64(accepted_time_delta)
+
+        abs_timestamps = self.merged_df["abs_timestamp"].to_numpy()
+        rel_timestamps = self.merged_df["rel_timestamp_millis"].to_numpy()
+        class_values = self.merged_df[self.class_columns].to_numpy()
+        score_values = self.merged_df[self.score_columns].to_numpy()
+
         counter = 0
         class_scores = np.zeros(NUM_YAMNET_CLASSES)
 
-        abs_timestamp_list = []
-        rel_timestamp_list = []
+        abs_start_time = abs_timestamps[0]
+        rel_start_time = rel_timestamps[0]
 
-        with alive_bar(self.merged_df.shape[0], force_tty=True) as bar:
-            for _, row in self.merged_df.iterrows():
+        num_rows = self.merged_df.shape[0]
+
+        with alive_bar(num_rows, force_tty=True) as bar:
+            for index in range(num_rows-1):
+
                 counter += 1
 
-                abs_timestamp_list.append(row["abs_timestamp"])
-                rel_timestamp_list.append(row["rel_timestamp_millis"])
+                for i, ind in enumerate(class_values[index]):
+                    # print(i, ind)
+                    class_scores[ind] += score_values[index][i]
 
-                for i, ind in enumerate(row[self.class_columns].values):
-                    class_scores[ind] += row[self.score_columns].values[i]
+                abs_next_start_time = abs_timestamps[index+1]
+                rel_next_start_time = rel_timestamps[index+1]
 
-                abs_delta = abs_timestamp_list[-1] - abs_timestamp_list[0]
-                rel_delta = rel_timestamp_list[-1] - rel_timestamp_list[0]
+                abs_delta = abs_next_start_time - abs_start_time
+                rel_delta = rel_next_start_time - rel_start_time
 
-                if abs_delta >= accepted_time_delta:
+                if abs_delta >= np_timedelta:
                     class_scores /= counter
                     self.get_classes_scores(class_scores)
 
-                    self.result["abs_timestamp"].append(abs_timestamp_list[0] + abs_delta / 2)
-                    self.result["rel_timestamp_millis"].append(rel_timestamp_list[0] + rel_delta / 2)
+                    self.result["abs_timestamp"].append(abs_start_time) #  + abs_delta / 2
+                    self.result["rel_timestamp_millis"].append(int(rel_start_time)) #  + rel_delta / 2
 
                     # Reset values
-                    abs_timestamp_list.clear()
-                    rel_timestamp_list.clear()
+                    abs_start_time = abs_next_start_time
+                    rel_start_time = rel_next_start_time
 
                     class_scores.fill(0)
                     counter = 0
@@ -308,8 +320,8 @@ class AudioClassifierDataReader:
         if counter != 0:
             class_scores /= counter
             self.get_classes_scores(class_scores)
-            self.result["abs_timestamp"].append(abs_timestamp_list[0] + abs_delta / 2)
-            self.result["rel_timestamp_millis"].append(rel_timestamp_list[0] + rel_delta / 2)
+            self.result["abs_timestamp"].append(abs_start_time) #  + abs_delta / 2
+            self.result["rel_timestamp_millis"].append(int(rel_start_time)) #  + rel_delta / 2
 
         mean_df = pd.DataFrame(self.result)
         mean_df["rel_timestamp_millis"] = mean_df["rel_timestamp_millis"].astype(int)
