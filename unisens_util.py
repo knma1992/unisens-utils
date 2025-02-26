@@ -340,6 +340,21 @@ class AudioClassifierDataReader:
 
 
 def create_huge_dataset_for_testing(data_path: Path, N: int = 2):
+    """
+    TLDR: Do not use this function! 
+    
+    It will copy an existing audio classifier study and duplicate it N times. 
+    Then it will save it in to a new folder and copy the unisens.xml in to it. After that it will run the 
+    combine/averaging on it to see how it behaves for large data.  
+
+    Parameters
+    ----------
+    data_path : Path
+        The path to the directory where the unisens files are in.
+    N : int
+        The amount of times the original data is duplicated.
+    """
+
     class_df = pd.read_csv(data_path / "audio_classifier_class.csv", header=None)
     num_classes = class_df.shape[1] - 1
     class_columns = create_column_name("class", num_classes)
@@ -357,8 +372,8 @@ def create_huge_dataset_for_testing(data_path: Path, N: int = 2):
 
     with alive_bar(N, force_tty=True) as bar:
         for i in range(N):
-            sum_class_df = pd.concat([sum_class_df, sum_class_df.copy()])
-            sum_score_df = pd.concat([sum_score_df, sum_score_df.copy()])
+            sum_class_df = pd.concat([sum_class_df, class_df.copy()])
+            sum_score_df = pd.concat([sum_score_df, scores_df.copy()])
 
             bar()
 
